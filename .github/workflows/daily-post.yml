@@ -1,0 +1,19 @@
+name: Daily Post
+
+on:
+  schedule:
+    - cron: "0 2 * * *" # UTC 02:00 = 台灣時間 10:00
+  workflow_dispatch: # 也可以手動觸發測試
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: node post.js
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
