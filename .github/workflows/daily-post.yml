@@ -13,7 +13,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+      - run: npm install
       - run: node post.js
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
