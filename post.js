@@ -145,8 +145,8 @@ async function postFailureNotice(reason) {
 
 export async function generateAndPost({ topicOverride, cpOverride } = {}) {
   const client = new OpenAI({
-    apiKey: process.env.DEEPSEEK_API_KEY,
-    baseURL: "https://api.deepseek.com",
+    apiKey: process.env.GEMINI_API_KEY,
+    baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
   });
 
   const dayIndex = getDayIndex();
@@ -159,7 +159,7 @@ export async function generateAndPost({ topicOverride, cpOverride } = {}) {
   console.log(`今日主題: ${topic}`);
 
   const completion = await client.chat.completions.create({
-    model: "deepseek-chat",
+    model: "gemini-2.0-flash",
     messages: [{ role: "user", content: buildPrompt(cp, topic, context) }],
     temperature: 1.0,
     max_tokens: 2000,

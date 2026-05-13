@@ -2,8 +2,8 @@ import OpenAI from "openai";
 import { writeFileSync } from "fs";
 
 const client = new OpenAI({
-  apiKey: process.env.DEEPSEEK_API_KEY,
-  baseURL: "https://api.deepseek.com",
+  apiKey: process.env.GEMINI_API_KEY,
+  baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
 });
 
 const prompt = `請為一部以台灣大學生為主角的男同CP日常短文系列，生成 120 個有趣的日常生活主題。
@@ -21,7 +21,7 @@ const prompt = `請為一部以台灣大學生為主角的男同CP日常短文�
 ["主題1", "主題2", ...]`;
 
 const response = await client.chat.completions.create({
-  model: "deepseek-chat",
+  model: "gemini-2.0-flash",
   messages: [{ role: "user", content: prompt }],
   temperature: 1.2,
 });
