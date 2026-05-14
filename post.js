@@ -1,11 +1,10 @@
 import OpenAI from "openai";
 import { readFileSync } from "fs";
-import { Client, GatewayIntentBits } from "discord.js";
+import { Client, GatewayIntentBits, ChannelType } from "discord.js";
 import "dotenv/config";
 import { getDayIndex, selectTopic, selectCp } from "./lib.js";
 
-const USE_EMBED = false;
-const CHANNEL_ID = process.env.DISCORD_CHANNEL_ID;
+const FORUM_CHANNEL_ID = process.env.DISCORD_CHANNEL_ID;
 // DRY_RUN=true 時只生成、不發到 Discord（用於 CI 驗證 AI 呼叫是否正常）
 const DRY_RUN = process.env.DRY_RUN === "true";
 
@@ -58,13 +57,13 @@ ${context.storylineSetting}
 - 直接輸出故事本文，不要加標題、作者名或任何額外說明`;
 }
 
-async function withDiscordChannel(fn) {
+async function withForumChannel(fn) {
   const client = new Client({ intents: [GatewayIntentBits.Guilds] });
   await client.login(process.env.DISCORD_BOT_TOKEN);
   try {
-    const channel = await client.channels.fetch(CHANNEL_ID);
-    if (!channel || !channel.isTextBased()) {
-      throw new Error(`Channel ${CHANNEL_ID} 不可用或不是文字頻道`);
+    const channel = await client.channels.fetch(FORUM_CHANNEL_ID);
+    if (!channel || channel.type !== ChannelType.GuildForum) {
+      throw new Error(`Channel ${FORUM_CHANNEL_ID} 不可用或不是 Forum 頻道`);
     }
     return await fn(channel);
   } finally {
@@ -72,18 +71,56 @@ async function withDiscordChannel(fn) {
   }
 }
 
-function buildPayload(content) {
-  return USE_EMBED ? { embeds: [{ description: content, color: 0xffb6c1 }] } : { content };
+async function createForumPost(forumChannel, title, chunks) {
+  const thread = await forumChannel.threads.create({
+    name: title,
+    message: { content: chunks[0] },
+  });
+  for (const chunk of chunks.slice(1)) {
+    await thread.send({ content: chunk });
+  }
+  return thread;
 }
 
-async function sendChunks(channel, chunks) {
-  for (const chunk of chunks) {
-    await channel.send(buildPayload(chunk));
+async function generateStory(openai, prompt) {
+  console.log(`Prompt 長度: ${prompt.length} 字`);
+  const temperatures = [1.0, 0.7];
+  let lastReason = null;
+  for (const [i, temperature] of temperatures.entries()) {
+    let completion;
+    try {
+      completion = await openai.chat.completions.create({
+        model: "gemini-2.5-pro",
+        messages: [{ role: "user", content: prompt }],
+        temperature,
+        // 2.5 Pro 是 thinking model，內部推理也吃 max_tokens 預算
+        // 故事本文約 ~2000 tokens，思考再抓 ~6000，給到 8192 比較安全
+        max_tokens: 16384,
+      });
+    } catch (err) {
+      console.error(`第 ${i + 1} 次 API call 拋例外:`, {
+        message: err.message,
+        status: err.status,
+        code: err.code,
+        type: err.type,
+        param: err.param,
+        error: err.error,
+        headers: err.headers,
+      });
+      throw err;
+    }
+    const choice = completion.choices[0];
+    const content = choice.message.content?.trim();
+    if (content) return content;
+    lastReason = choice.finish_reason;
+    console.warn(`第 ${i + 1} 次生成沒拿到內容 (finish_reason=${lastReason})。` + (i + 1 < temperatures.length ? "降溫重試…" : "已用盡嘗試。"));
+    console.warn("完整回應：", JSON.stringify(completion, null, 2));
   }
+  throw new Error(`模型連續沒回傳內容 (finish_reason=${lastReason})，疑似 safety filter`);
 }
 
 export async function generateAndPost({ topicOverride, cpOverride } = {}) {
-  const client = new OpenAI({
+  const openai = new OpenAI({
     apiKey: process.env.GEMINI_API_KEY,
     baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
   });
@@ -97,14 +134,7 @@ export async function generateAndPost({ topicOverride, cpOverride } = {}) {
   console.log(`今日 CP: ${cp.name}`);
   console.log(`今日主題: ${topic}`);
 
-  const completion = await client.chat.completions.create({
-    model: "gemini-2.5-pro",
-    messages: [{ role: "user", content: buildPrompt(cp, topic, context) }],
-    temperature: 1.0,
-    max_tokens: 2000,
-  });
-
-  const story = completion.choices[0].message.content.trim();
+  const story = await generateStory(openai, buildPrompt(cp, topic, context));
 
   const today = new Date().toLocaleDateString("zh-TW", {
     timeZone: "Asia/Taipei",
@@ -113,30 +143,24 @@ export async function generateAndPost({ topicOverride, cpOverride } = {}) {
     day: "2-digit",
   });
 
-  const message = `📅 ${today} 💕 ${cp.name}\n\n${story}`;
+  const title = `${today} 💕 ${cp.name} — ${topic}`.slice(0, 100);
 
   const chunks = [];
-  if (message.length > 2000) {
-    const header = `📅 ${today} 💕 ${cp.name}\n\n`;
-    let remaining = story;
-    chunks.push(header + remaining.slice(0, 2000 - header.length));
-    remaining = remaining.slice(2000 - header.length);
-    while (remaining.length > 0) {
-      chunks.push(remaining.slice(0, 2000));
-      remaining = remaining.slice(2000);
-    }
-  } else {
-    chunks.push(message);
+  let remaining = story;
+  while (remaining.length > 0) {
+    chunks.push(remaining.slice(0, 2000));
+    remaining = remaining.slice(2000);
   }
 
   if (DRY_RUN) {
     console.log("=== DRY RUN：不實際發到 Discord ===");
+    console.log(`標題: ${title}`);
     console.log(chunks[0].slice(0, 300) + (chunks[0].length > 300 ? "\n…（略）" : ""));
     console.log(`共 ${chunks.length} 則訊息，${story.length} 字`);
     return;
   }
 
-  await withDiscordChannel(channel => sendChunks(channel, chunks));
+  await withForumChannel((forumChannel) => createForumPost(forumChannel, title, chunks));
 
   console.log("發文成功！");
 }
@@ -147,7 +171,12 @@ if (isMain) {
   generateAndPost().catch(async err => {
     console.error("發文失敗：", err.message);
     try {
-      await withDiscordChannel(channel => channel.send({ content: `⚠️ 今天的日常短文生成失敗了：${err.message}` }));
+      await withForumChannel((forumChannel) =>
+        forumChannel.threads.create({
+          name: `⚠️ 發文失敗 ${new Date().toISOString().slice(0, 10)}`,
+          message: { content: `今天的日常短文生成失敗了：${err.message}` },
+        })
+      );
     } catch (notifyErr) {
       console.error("失敗通知也寄不出去：", notifyErr.message);
     }
