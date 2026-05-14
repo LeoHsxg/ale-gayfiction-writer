@@ -10,6 +10,11 @@ on:
 jobs:
   ci:
     runs-on: ubuntu-latest
+    # 把 secret 拉到 job-level env，這樣 step 的 if: 才能用 env.X 來判斷
+    # （secrets context 在 step-level if: 裡會被遮罩處理，比較不到，所以
+    # 必須先繞道 env）
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -39,9 +44,8 @@ jobs:
       # 需要在 GitHub repo Settings → Secrets 裡設定 GEMINI_API_KEY
       # 沒設定的話這步會跳過（不會讓整個 CI 失敗）
       - name: Dry-run generation
-        if: ${{ secrets.GEMINI_API_KEY != '' }}
+        if: env.GEMINI_API_KEY != ''
         run: node post.js
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           DISCORD_CHANNEL_ID: dry-run
           DRY_RUN: "true"

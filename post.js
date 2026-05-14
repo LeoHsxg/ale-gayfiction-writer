@@ -170,15 +170,17 @@ const isMain = process.argv[1] && process.argv[1].endsWith("post.js");
 if (isMain) {
   generateAndPost().catch(async err => {
     console.error("發文失敗：", err.message);
-    try {
-      await withForumChannel((forumChannel) =>
-        forumChannel.threads.create({
-          name: `⚠️ 發文失敗 ${new Date().toISOString().slice(0, 10)}`,
-          message: { content: `今天的日常短文生成失敗了：${err.message}` },
-        })
-      );
-    } catch (notifyErr) {
-      console.error("失敗通知也寄不出去：", notifyErr.message);
+    if (!DRY_RUN) {
+      try {
+        await withForumChannel((forumChannel) =>
+          forumChannel.threads.create({
+            name: `⚠️ 發文失敗 ${new Date().toISOString().slice(0, 10)}`,
+            message: { content: `今天的日常短文生成失敗了：${err.message}` },
+          })
+        );
+      } catch (notifyErr) {
+        console.error("失敗通知也寄不出去：", notifyErr.message);
+      }
     }
     process.exit(1);
   });
