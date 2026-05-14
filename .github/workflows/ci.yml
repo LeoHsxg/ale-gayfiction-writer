@@ -1,0 +1,35 @@
+name: CI
+
+# 每次 push 或 PR 到 main 時自動跑
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # Lv1：語法檢查
+      # node --check 只做語法解析，不執行程式，所以不需要 API key
+      - name: Syntax check
+        run: |
+          node --check post.js
+          node --check generate-topics.js
+          node --check lib.js
+
+      # Lv2（附帶）：用 npm ci 而不是 npm install
+      # npm ci 嚴格照 package-lock.json 安裝，確保版本一致
+      - name: Install dependencies
+        run: npm ci
+
+      # Lv3：單元測試
+      # node --test 會自動尋找所有 *.test.js 執行
+      - name: Unit tests
+        run: node --test
