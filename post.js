@@ -134,8 +134,45 @@ async function sendChunks(channel, chunks) {
   }
 }
 
+// Gemini safety filter 對男同 CP 創作偏敏感。透過 OpenAI 相容層關閉的正式語法是
+// 巢狀在 extra_body.google.safety_settings (snake_case)，最上層放 safetySettings 會被吃掉。
+const SAFETY_SETTINGS = [
+  { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+  { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+  { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+  { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
+];
+
+async function generateStory(openai, prompt) {
+  const temperatures = [1.0, 0.7];
+  let lastReason = null;
+  for (const [i, temperature] of temperatures.entries()) {
+    const completion = await openai.chat.completions.create({
+      model: "gemini-2.5-pro",
+      messages: [{ role: "user", content: prompt }],
+      temperature,
+      max_tokens: 2000,
+      extra_body: {
+        google: { safety_settings: SAFETY_SETTINGS },
+      },
+    });
+    const choice = completion.choices[0];
+    const content = choice.message.content?.trim();
+    if (content) return content;
+    lastReason = choice.finish_reason;
+    console.warn(
+      `第 ${i + 1} 次生成沒拿到內容 (finish_reason=${lastReason})。` +
+        (i + 1 < temperatures.length ? "降溫重試…" : "已用盡嘗試。")
+    );
+    if (!content) {
+      console.warn("完整回應：", JSON.stringify(completion, null, 2));
+    }
+  }
+  throw new Error(`模型連續沒回傳內容 (finish_reason=${lastReason})，疑似 safety filter`);
+}
+
 export async function generateAndPost({ topicOverride, cpOverride } = {}) {
-  const client = new OpenAI({
+  const openai = new OpenAI({
     apiKey: process.env.GEMINI_API_KEY,
     baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
   });
@@ -149,14 +186,7 @@ export async function generateAndPost({ topicOverride, cpOverride } = {}) {
   console.log(`今日 CP: ${cp.name}`);
   console.log(`今日主題: ${topic}`);
 
-  const completion = await client.chat.completions.create({
-    model: "gemini-2.5-pro",
-    messages: [{ role: "user", content: buildPrompt(cp, topic, context) }],
-    temperature: 1.0,
-    max_tokens: 2000,
-  });
-
-  const story = completion.choices[0].message.content.trim();
+  const story = await generateStory(openai, buildPrompt(cp, topic, context));
 
   const today = new Date().toLocaleDateString("zh-TW", {
     timeZone: "Asia/Taipei",
@@ -181,7 +211,7 @@ export async function generateAndPost({ topicOverride, cpOverride } = {}) {
     chunks.push(message);
   }
 
-  await withDiscordChannel(channel => sendChunks(channel, chunks));
+  await withDiscordChannel((channel) => sendChunks(channel, chunks));
 
   console.log("發文成功！");
 }
