@@ -33,3 +33,15 @@ jobs:
       # node --test 會自動尋找所有 *.test.js 執行
       - name: Unit tests
         run: node --test
+
+      # Lv4：dry-run 生成驗證
+      # 實際呼叫 Gemini API，確認 prompt / 回傳格式沒問題，但不發到 Discord
+      # 需要在 GitHub repo Settings → Secrets 裡設定 GEMINI_API_KEY
+      # 沒設定的話這步會跳過（不會讓整個 CI 失敗）
+      - name: Dry-run generation
+        if: ${{ secrets.GEMINI_API_KEY != '' }}
+        run: node post.js
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          DISCORD_CHANNEL_ID: dry-run
+          DRY_RUN: "true"
