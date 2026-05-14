@@ -134,39 +134,39 @@ async function sendChunks(channel, chunks) {
   }
 }
 
-// Gemini safety filter 對男同 CP 創作偏敏感。透過 OpenAI 相容層關閉的正式語法是
-// 巢狀在 extra_body.google.safety_settings (snake_case)，最上層放 safetySettings 會被吃掉。
-const SAFETY_SETTINGS = [
-  { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
-  { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
-  { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
-  { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
-];
-
 async function generateStory(openai, prompt) {
+  console.log(`Prompt 長度: ${prompt.length} 字`);
   const temperatures = [1.0, 0.7];
   let lastReason = null;
   for (const [i, temperature] of temperatures.entries()) {
-    const completion = await openai.chat.completions.create({
-      model: "gemini-2.5-pro",
-      messages: [{ role: "user", content: prompt }],
-      temperature,
-      max_tokens: 2000,
-      extra_body: {
-        google: { safety_settings: SAFETY_SETTINGS },
-      },
-    });
+    let completion;
+    try {
+      completion = await openai.chat.completions.create({
+        model: "gemini-2.5-pro",
+        messages: [{ role: "user", content: prompt }],
+        temperature,
+        // 2.5 Pro 是 thinking model，內部推理也吃 max_tokens 預算
+        // 故事本文約 ~2000 tokens，思考再抓 ~6000，給到 8192 比較安全
+        max_tokens: 16384,
+      });
+    } catch (err) {
+      console.error(`第 ${i + 1} 次 API call 拋例外:`, {
+        message: err.message,
+        status: err.status,
+        code: err.code,
+        type: err.type,
+        param: err.param,
+        error: err.error,
+        headers: err.headers,
+      });
+      throw err;
+    }
     const choice = completion.choices[0];
     const content = choice.message.content?.trim();
     if (content) return content;
     lastReason = choice.finish_reason;
-    console.warn(
-      `第 ${i + 1} 次生成沒拿到內容 (finish_reason=${lastReason})。` +
-        (i + 1 < temperatures.length ? "降溫重試…" : "已用盡嘗試。")
-    );
-    if (!content) {
-      console.warn("完整回應：", JSON.stringify(completion, null, 2));
-    }
+    console.warn(`第 ${i + 1} 次生成沒拿到內容 (finish_reason=${lastReason})。` + (i + 1 < temperatures.length ? "降溫重試…" : "已用盡嘗試。"));
+    console.warn("完整回應：", JSON.stringify(completion, null, 2));
   }
   throw new Error(`模型連續沒回傳內容 (finish_reason=${lastReason})，疑似 safety filter`);
 }
@@ -211,7 +211,7 @@ export async function generateAndPost({ topicOverride, cpOverride } = {}) {
     chunks.push(message);
   }
 
-  await withDiscordChannel((channel) => sendChunks(channel, chunks));
+  await withDiscordChannel(channel => sendChunks(channel, chunks));
 
   console.log("發文成功！");
 }
