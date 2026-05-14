@@ -1,0 +1,24 @@
+name: Post to Test Channel
+
+# CD 升級：merge 進 main 之後，自動發一篇到測試頻道
+# 讓你在 cron 正式發文之前先確認產出格式和內容正常
+on:
+  push:
+    branches: [main]
+
+jobs:
+  post-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm ci
+      - run: node post.js
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+          # 測試頻道 ID：在 GitHub repo Settings → Variables 設定
+          # 跟正式的 DISCORD_CHANNEL_ID 不同，指向你自己看得到的測試頻道
+          DISCORD_CHANNEL_ID: ${{ vars.DISCORD_CHANNEL_ID_TEST }}

@@ -4,7 +4,9 @@ import { Client, GatewayIntentBits, ChannelType } from "discord.js";
 import "dotenv/config";
 import { getDayIndex, selectTopic, selectCp } from "./lib.js";
 
-const FORUM_CHANNEL_ID = "1504354572003708948";
+const FORUM_CHANNEL_ID = process.env.DISCORD_CHANNEL_ID;
+// DRY_RUN=true 時只生成、不發到 Discord（用於 CI 驗證 AI 呼叫是否正常）
+const DRY_RUN = process.env.DRY_RUN === "true";
 
 function loadContext(cpKey) {
   const realitySetting = readFileSync("context/reality setting.md", "utf-8");
@@ -148,6 +150,14 @@ export async function generateAndPost({ topicOverride, cpOverride } = {}) {
   while (remaining.length > 0) {
     chunks.push(remaining.slice(0, 2000));
     remaining = remaining.slice(2000);
+  }
+
+  if (DRY_RUN) {
+    console.log("=== DRY RUN：不實際發到 Discord ===");
+    console.log(`標題: ${title}`);
+    console.log(chunks[0].slice(0, 300) + (chunks[0].length > 300 ? "\n…（略）" : ""));
+    console.log(`共 ${chunks.length} 則訊息，${story.length} 字`);
+    return;
   }
 
   await withForumChannel((forumChannel) => createForumPost(forumChannel, title, chunks));
