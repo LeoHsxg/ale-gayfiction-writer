@@ -1,10 +1,9 @@
 import OpenAI from "openai";
 import { readFileSync } from "fs";
-import { Client, GatewayIntentBits } from "discord.js";
+import { Client, GatewayIntentBits, ChannelType } from "discord.js";
 import "dotenv/config";
 
-const USE_EMBED = false;
-const CHANNEL_ID = "1485270703937818714";
+const FORUM_CHANNEL_ID = "1504354572003708948";
 
 const BASE_DATE = new Date("2026-05-13T00:00:00+08:00");
 
@@ -110,13 +109,13 @@ ${context.storylineSetting}
 - 直接輸出故事本文，不要加標題、作者名或任何額外說明`;
 }
 
-async function withDiscordChannel(fn) {
+async function withForumChannel(fn) {
   const client = new Client({ intents: [GatewayIntentBits.Guilds] });
   await client.login(process.env.DISCORD_BOT_TOKEN);
   try {
-    const channel = await client.channels.fetch(CHANNEL_ID);
-    if (!channel || !channel.isTextBased()) {
-      throw new Error(`Channel ${CHANNEL_ID} 不可用或不是文字頻道`);
+    const channel = await client.channels.fetch(FORUM_CHANNEL_ID);
+    if (!channel || channel.type !== ChannelType.GuildForum) {
+      throw new Error(`Channel ${FORUM_CHANNEL_ID} 不可用或不是 Forum 頻道`);
     }
     return await fn(channel);
   } finally {
@@ -124,14 +123,15 @@ async function withDiscordChannel(fn) {
   }
 }
 
-function buildPayload(content) {
-  return USE_EMBED ? { embeds: [{ description: content, color: 0xffb6c1 }] } : { content };
-}
-
-async function sendChunks(channel, chunks) {
-  for (const chunk of chunks) {
-    await channel.send(buildPayload(chunk));
+async function createForumPost(forumChannel, title, chunks) {
+  const thread = await forumChannel.threads.create({
+    name: title,
+    message: { content: chunks[0] },
+  });
+  for (const chunk of chunks.slice(1)) {
+    await thread.send({ content: chunk });
   }
+  return thread;
 }
 
 async function generateStory(openai, prompt) {
@@ -195,23 +195,16 @@ export async function generateAndPost({ topicOverride, cpOverride } = {}) {
     day: "2-digit",
   });
 
-  const message = `📅 ${today} 💕 ${cp.name}\n\n${story}`;
+  const title = `${today} 💕 ${cp.name} — ${topic}`.slice(0, 100);
 
   const chunks = [];
-  if (message.length > 2000) {
-    const header = `📅 ${today} 💕 ${cp.name}\n\n`;
-    let remaining = story;
-    chunks.push(header + remaining.slice(0, 2000 - header.length));
-    remaining = remaining.slice(2000 - header.length);
-    while (remaining.length > 0) {
-      chunks.push(remaining.slice(0, 2000));
-      remaining = remaining.slice(2000);
-    }
-  } else {
-    chunks.push(message);
+  let remaining = story;
+  while (remaining.length > 0) {
+    chunks.push(remaining.slice(0, 2000));
+    remaining = remaining.slice(2000);
   }
 
-  await withDiscordChannel(channel => sendChunks(channel, chunks));
+  await withForumChannel((forumChannel) => createForumPost(forumChannel, title, chunks));
 
   console.log("發文成功！");
 }
@@ -222,7 +215,12 @@ if (isMain) {
   generateAndPost().catch(async err => {
     console.error("發文失敗：", err.message);
     try {
-      await withDiscordChannel(channel => channel.send({ content: `⚠️ 今天的日常短文生成失敗了：${err.message}` }));
+      await withForumChannel((forumChannel) =>
+        forumChannel.threads.create({
+          name: `⚠️ 發文失敗 ${new Date().toISOString().slice(0, 10)}`,
+          message: { content: `今天的日常短文生成失敗了：${err.message}` },
+        })
+      );
     } catch (notifyErr) {
       console.error("失敗通知也寄不出去：", notifyErr.message);
     }
