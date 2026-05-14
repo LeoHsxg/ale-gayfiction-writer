@@ -1,7 +1,10 @@
 import OpenAI from "openai";
 import { readFileSync } from "fs";
+import { Client, GatewayIntentBits } from "discord.js";
+import "dotenv/config";
 
 const USE_EMBED = false;
+const CHANNEL_ID = "1485270703937818714";
 
 const BASE_DATE = new Date("2026-05-13T00:00:00+08:00");
 
@@ -60,10 +63,7 @@ function selectCp(dayIndex) {
 
 function loadContext(cpKey) {
   const realitySetting = readFileSync("context/reality setting.md", "utf-8");
-  const storylineSetting = readFileSync(
-    "context/stroyline setting.md",
-    "utf-8"
-  );
+  const storylineSetting = readFileSync("context/stroyline setting.md", "utf-8");
   const coupling = readFileSync("context/coupling.md", "utf-8");
 
   const cpLines = coupling.split("\n");
@@ -110,37 +110,28 @@ ${context.storylineSetting}
 - 直接輸出故事本文，不要加標題、作者名或任何額外說明`;
 }
 
-async function postToDiscord(content) {
-  const webhookUrl = process.env.DISCORD_WEBHOOK_URL;
-  const body = USE_EMBED
-    ? {
-        embeds: [
-          {
-            description: content,
-            color: 0xffb6c1,
-          },
-        ],
-      }
-    : { content };
-
-  const res = await fetch(webhookUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-
-  if (!res.ok) {
-    throw new Error(`Discord webhook 回傳 ${res.status}`);
+async function withDiscordChannel(fn) {
+  const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+  await client.login(process.env.DISCORD_BOT_TOKEN);
+  try {
+    const channel = await client.channels.fetch(CHANNEL_ID);
+    if (!channel || !channel.isTextBased()) {
+      throw new Error(`Channel ${CHANNEL_ID} 不可用或不是文字頻道`);
+    }
+    return await fn(channel);
+  } finally {
+    await client.destroy();
   }
 }
 
-async function postFailureNotice(reason) {
-  const webhookUrl = process.env.DISCORD_WEBHOOK_URL;
-  await fetch(webhookUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ content: `⚠️ 今天的日常短文生成失敗了：${reason}` }),
-  });
+function buildPayload(content) {
+  return USE_EMBED ? { embeds: [{ description: content, color: 0xffb6c1 }] } : { content };
+}
+
+async function sendChunks(channel, chunks) {
+  for (const chunk of chunks) {
+    await channel.send(buildPayload(chunk));
+  }
 }
 
 export async function generateAndPost({ topicOverride, cpOverride } = {}) {
@@ -159,7 +150,7 @@ export async function generateAndPost({ topicOverride, cpOverride } = {}) {
   console.log(`今日主題: ${topic}`);
 
   const completion = await client.chat.completions.create({
-    model: "gemini-2.0-flash",
+    model: "gemini-2.5-pro",
     messages: [{ role: "user", content: buildPrompt(cp, topic, context) }],
     temperature: 1.0,
     max_tokens: 2000,
@@ -174,11 +165,11 @@ export async function generateAndPost({ topicOverride, cpOverride } = {}) {
     day: "2-digit",
   });
 
-  const message = `📅 ${today}　💕 ${cp.name}\n\n${story}`;
+  const message = `📅 ${today} 💕 ${cp.name}\n\n${story}`;
 
+  const chunks = [];
   if (message.length > 2000) {
-    const header = `📅 ${today}　💕 ${cp.name}\n\n`;
-    const chunks = [];
+    const header = `📅 ${today} 💕 ${cp.name}\n\n`;
     let remaining = story;
     chunks.push(header + remaining.slice(0, 2000 - header.length));
     remaining = remaining.slice(2000 - header.length);
@@ -186,12 +177,11 @@ export async function generateAndPost({ topicOverride, cpOverride } = {}) {
       chunks.push(remaining.slice(0, 2000));
       remaining = remaining.slice(2000);
     }
-    for (const chunk of chunks) {
-      await postToDiscord(chunk);
-    }
   } else {
-    await postToDiscord(message);
+    chunks.push(message);
   }
+
+  await withDiscordChannel(channel => sendChunks(channel, chunks));
 
   console.log("發文成功！");
 }
@@ -199,10 +189,10 @@ export async function generateAndPost({ topicOverride, cpOverride } = {}) {
 // 直接執行時的入口
 const isMain = process.argv[1] && process.argv[1].endsWith("post.js");
 if (isMain) {
-  generateAndPost().catch(async (err) => {
+  generateAndPost().catch(async err => {
     console.error("發文失敗：", err.message);
     try {
-      await postFailureNotice(err.message);
+      await withDiscordChannel(channel => channel.send({ content: `⚠️ 今天的日常短文生成失敗了：${err.message}` }));
     } catch (notifyErr) {
       console.error("失敗通知也寄不出去：", notifyErr.message);
     }
