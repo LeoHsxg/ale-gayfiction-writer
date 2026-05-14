@@ -4,7 +4,12 @@ import { Client, GatewayIntentBits, ChannelType } from "discord.js";
 import "dotenv/config";
 import { getDayIndex, selectTopic, selectCp } from "./lib.js";
 
-const FORUM_CHANNEL_ID = process.env.DISCORD_CHANNEL_ID;
+// USE_DEV_CHANNEL=true 時改發到開發測試頻道（DISCORD_CHANNEL_ID_DEV），
+// 預設走正式頻道（DISCORD_CHANNEL_ID）。本機開發時在 .env 設 true，
+// GitHub Actions 上不設定就會自動走正式。
+const FORUM_CHANNEL_ID = process.env.USE_DEV_CHANNEL === "true"
+  ? process.env.DISCORD_CHANNEL_ID_DEV
+  : process.env.DISCORD_CHANNEL_ID;
 // DRY_RUN=true 時只生成、不發到 Discord（用於 CI 驗證 AI 呼叫是否正常）
 const DRY_RUN = process.env.DRY_RUN === "true";
 
