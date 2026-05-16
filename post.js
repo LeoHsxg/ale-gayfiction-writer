@@ -39,7 +39,7 @@ function loadContext(cpKey) {
 }
 
 function buildPrompt(cp, topic, context) {
-  return `你是一位擅長寫男同CP日常短文的創作者，文筆自然、細膩，善於捕捉人物之間的情感張力。
+  return `你是一位擅長寫男同BL CP日常短文的創作者，文筆自然、細膩，善於捕捉人物之間的情感張力。
 
 以下是角色設定：
 
