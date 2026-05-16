@@ -3,8 +3,8 @@ import { writeFileSync } from "fs";
 import "dotenv/config";
 
 const client = new OpenAI({
-  apiKey: process.env.GEMINI_API_KEY,
-  baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
+  apiKey: process.env.DEEPSEEK_API_KEY,
+  baseURL: "https://api.deepseek.com/v1/",
 });
 
 const prompt = `請為一部以台灣大學生為主角的男同CP日常短文系列, 生成 120 個有趣的日常生活主題。
@@ -22,7 +22,7 @@ const prompt = `請為一部以台灣大學生為主角的男同CP日常短文�
 {"topics": ["主題1", "主題2", ...]}`;
 
 const response = await client.chat.completions.create({
-  model: "gemini-2.5-pro",
+  model: "deepseek-chat",
   messages: [{ role: "user", content: prompt }],
   temperature: 1.2,
   response_format: { type: "json_object" },

@@ -17,7 +17,7 @@ jobs:
       - run: npm ci
       - run: node post.js
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
           # 測試頻道 ID：在 GitHub repo Settings → Variables 設定
           # 跟正式的 DISCORD_CHANNEL_ID 不同，指向你自己看得到的測試頻道

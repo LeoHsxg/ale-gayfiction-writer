@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A Discord bot that posts one AI-generated 男同 CP daily fanfic per day to a Discord **forum channel** (each day = a new thread). Story is generated with Gemini 2.5 Pro, posted via discord.js. Triggered by an external cron-job.org hitting GitHub's `workflow_dispatch` API (the in-Actions `schedule:` trigger was dropped due to latency; do not re-add it).
+A Discord bot that posts one AI-generated 男同 CP daily fanfic per day to a Discord **forum channel** (each day = a new thread). Story is generated with DeepSeek V3 (`deepseek-chat`), posted via discord.js. Triggered by an external cron-job.org hitting GitHub's `workflow_dispatch` API (the in-Actions `schedule:` trigger was dropped due to latency; do not re-add it).
+
+Originally used Gemini 2.5 Pro but Google's `PROHIBITED_CONTENT` filter (a hardcoded policy that can't be disabled via `safety_settings`) kept blocking the prompt because the character context contains BL-genre signals. DeepSeek has much looser moderation for this kind of fiction. Don't switch back to Gemini without a plan for that.
 
 Content (CPs, character descriptions, scene topics) is Chinese; the surrounding code and tooling are English. The fictional universe lives in `context/` and `storyline/`.
 
@@ -39,16 +41,15 @@ node --check post.js
 
 Implication: changing `BASE_DATE`, the topic count, or the CP list **shifts the whole calendar**. Tests in `post.test.js` lock down the modulo invariants — don't break those without intent.
 
-### The Gemini call goes through the OpenAI SDK
+### The LLM call goes through the OpenAI SDK
 
-`post.js` instantiates `new OpenAI({ apiKey: GEMINI_API_KEY, baseURL: "...generativelanguage.googleapis.com/v1beta/openai/" })` and talks Chat Completions. This means:
+`post.js` instantiates `new OpenAI({ apiKey: DEEPSEEK_API_KEY, baseURL: "https://api.deepseek.com/v1/" })` and talks Chat Completions. DeepSeek is a first-class OpenAI-compat provider, so the request shape is exactly what `openai` expects — no compat-layer quirks. You can swap to another OpenAI-compat provider (Groq, OpenRouter, Together, Fireworks…) by changing baseURL + key + model name; the rest of the call shape stays.
 
-- You can swap providers (DeepSeek/Groq/OpenRouter/etc.) by changing baseURL + key + model name; the rest of the call shape stays.
-- The Python SDK's `extra_body` magic does **not** exist in the Node SDK. Unknown top-level fields get sent through as-is, but Google's compat layer **rejects `extra_body`** as an unknown field (causes immediate 400). For Gemini-specific params (safety settings, thinking config), use the native `@google/genai` SDK instead of trying to thread them through this layer.
+### `deepseek-chat` is NOT a thinking model — max_tokens stays small
 
-### Gemini 2.5 Pro is a thinking model — max_tokens trap
+DeepSeek's `deepseek-chat` (V3 family) is a regular completion model: every output token shows up in `completion_tokens`, no hidden reasoning budget. `max_tokens: 4096` is plenty for an 800–1200字 story. If you ever switch to `deepseek-reasoner` (R1, which IS a thinking model), you'll need to raise `max_tokens` significantly — the old Gemini-era 16384 budget was for that reason.
 
-Internal reasoning tokens **count against `max_tokens` but don't appear in `completion_tokens`**. The math gives it away in `usage`: `total_tokens - prompt_tokens - completion_tokens` = the reasoning burn. A budget of 2000 will leave 0 for actual output and return `finish_reason: "length"` with `content: undefined`. Current setting is 16384; don't lower it. `generateStory()` retries once at lower temperature and dumps the full response if both attempts come back empty — keep that diagnostic.
+`generateStory()` retries once at lower temperature and dumps the full response if both attempts come back empty — keep that diagnostic, useful when the provider returns a malformed shape.
 
 ### Prompt assembly reads three .md files
 
@@ -73,7 +74,7 @@ The legacy text-channel sender is preserved verbatim in `snippets/post-to-channe
 
 - `daily-post.yml` — production. `workflow_dispatch` only (external cron triggers it). Posts to prod channel via `vars.DISCORD_CHANNEL_ID`.
 - `post-test.yml` — runs on every push to main, posts to `vars.DISCORD_CHANNEL_ID_TEST` so you can eyeball the latest build before the next cron run.
-- `ci.yml` — syntax check + `npm ci` + `node --test` + optional dry-run generation (gated on `env.GEMINI_API_KEY != ''` after lifting the secret to job-level env — step-level `if:` against `secrets.X` is unreliable).
+- `ci.yml` — syntax check + `npm ci` + `node --test` + optional dry-run generation (gated on `env.DEEPSEEK_API_KEY != ''` after lifting the secret to job-level env — step-level `if:` against `secrets.X` is unreliable).
 
 ### Things that look like dead code but aren't
 

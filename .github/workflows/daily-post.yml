@@ -14,7 +14,7 @@ jobs:
       - run: npm install
       - run: node post.js
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
           DISCORD_CHANNEL_ID: ${{ vars.DISCORD_CHANNEL_ID }}
           # 失敗通知會發到這個 dev 頻道；正式頻道版面不被錯誤訊息污染

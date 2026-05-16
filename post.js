@@ -95,12 +95,12 @@ async function generateStory(openai, prompt) {
     let completion;
     try {
       completion = await openai.chat.completions.create({
-        model: "gemini-2.5-pro",
+        model: "deepseek-chat",
         messages: [{ role: "user", content: prompt }],
         temperature,
-        // 2.5 Pro 是 thinking model，內部推理也吃 max_tokens 預算
-        // 故事本文約 ~2000 tokens，思考再抓 ~6000，給到 8192 比較安全
-        max_tokens: 16384,
+        // DeepSeek V3 不是 thinking model，輸出 token 限制 8192，
+        // 我們故事約 2000 tokens，4096 留兩倍餘裕
+        max_tokens: 4096,
       });
     } catch (err) {
       console.error(`第 ${i + 1} 次 API call 拋例外:`, {
@@ -128,8 +128,8 @@ async function generateStory(openai, prompt) {
 
 export async function generateAndPost({ topicOverride, cpOverride } = {}) {
   const openai = new OpenAI({
-    apiKey: process.env.GEMINI_API_KEY,
-    baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
+    apiKey: process.env.DEEPSEEK_API_KEY,
+    baseURL: "https://api.deepseek.com/v1/",
   });
 
   const dayIndex = getDayIndex();
