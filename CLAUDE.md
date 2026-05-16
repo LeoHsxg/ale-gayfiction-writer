@@ -46,9 +46,9 @@ Implication: changing `BASE_DATE`, the topic count, or the CP list **shifts the 
 - You can swap providers (DeepSeek/Groq/OpenRouter/etc.) by changing baseURL + key + model name; the rest of the call shape stays.
 - The Python SDK's `extra_body` magic does **not** exist in the Node SDK. Unknown top-level fields get sent through as-is, but Google's compat layer **rejects `extra_body`** as an unknown field (causes immediate 400). For Gemini-specific params (safety settings, thinking config), use the native `@google/genai` SDK instead of trying to thread them through this layer.
 
-### Gemini 2.5 Pro is a thinking model — max_tokens trap
+### Gemini 2.5 Flash — why not Pro
 
-Internal reasoning tokens **count against `max_tokens` but don't appear in `completion_tokens`**. The math gives it away in `usage`: `total_tokens - prompt_tokens - completion_tokens` = the reasoning burn. A budget of 2000 will leave 0 for actual output and return `finish_reason: "length"` with `content: undefined`. Current setting is 16384; don't lower it. `generateStory()` retries once at lower temperature and dumps the full response if both attempts come back empty — keep that diagnostic.
+We use **`gemini-2.5-flash`**, not Pro. Pro is a heavy thinking model: internal reasoning tokens count against `max_tokens` but don't appear in `completion_tokens`. On creative tasks Pro burned the entire 16384-token budget on reasoning and returned `finish_reason: "length"` with `content: undefined`. Flash uses adaptive thinking and barely reasons on creative writing, so the budget is almost entirely available for story output. Do not switch back to Pro without also plumbing in `thinkingBudget: 0` via the native `@google/genai` SDK — the OpenAI compat layer rejects `extra_body` with a 400. `generateStory()` retries once at lower temperature and dumps the full response if both attempts come back empty — keep that diagnostic.
 
 ### Prompt assembly reads three .md files
 

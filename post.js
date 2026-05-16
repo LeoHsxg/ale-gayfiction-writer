@@ -95,7 +95,7 @@ async function generateStory(openai, prompt) {
     let completion;
     try {
       completion = await openai.chat.completions.create({
-        model: "gemini-2.5-pro",
+        model: "gemini-2.5-flash",
         messages: [{ role: "user", content: prompt }],
         temperature,
         // 2.5 Pro 是 thinking model，內部推理也吃 max_tokens 預算

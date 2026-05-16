@@ -22,7 +22,7 @@ const prompt = `請為一部以台灣大學生為主角的男同CP日常短文�
 {"topics": ["主題1", "主題2", ...]}`;
 
 const response = await client.chat.completions.create({
-  model: "gemini-2.5-pro",
+  model: "gemini-2.5-flash",
   messages: [{ role: "user", content: prompt }],
   temperature: 1.2,
   response_format: { type: "json_object" },
