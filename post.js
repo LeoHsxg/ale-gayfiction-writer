@@ -7,9 +7,7 @@ import { getDayIndex, selectTopic, selectCp } from "./lib.js";
 // USE_DEV_CHANNEL=true 時改發到開發測試頻道（DISCORD_CHANNEL_ID_DEV），
 // 預設走正式頻道（DISCORD_CHANNEL_ID）。本機開發時在 .env 設 true，
 // GitHub Actions 上不設定就會自動走正式。
-const FORUM_CHANNEL_ID = process.env.USE_DEV_CHANNEL === "true"
-  ? process.env.DISCORD_CHANNEL_ID_DEV
-  : process.env.DISCORD_CHANNEL_ID;
+const FORUM_CHANNEL_ID = process.env.USE_DEV_CHANNEL === "true" ? process.env.DISCORD_CHANNEL_ID_DEV : process.env.DISCORD_CHANNEL_ID;
 // 失敗通知統一發到 dev 頻道（不污染正式頻道版面）。沒設定就不發通知。
 const ALERT_CHANNEL_ID = process.env.DISCORD_CHANNEL_ID_DEV;
 // DRY_RUN=true 時只生成、不發到 Discord（用於 CI 驗證 AI 呼叫是否正常）
@@ -39,7 +37,7 @@ function loadContext(cpKey) {
 }
 
 function buildPrompt(cp, topic, context) {
-  return `你是一位擅長寫男同BL CP日常短文的創作者，文筆自然、細膩，善於捕捉人物之間的情感張力。
+  return `你是一位擅長寫男同CP日常短文的創作者，文筆自然、細膩，善於捕捉人物之間的情感張力。
 
 以下是角色設定：
 
@@ -169,7 +167,7 @@ export async function generateAndPost({ topicOverride, cpOverride } = {}) {
     return;
   }
 
-  await withForumChannel(FORUM_CHANNEL_ID, (forumChannel) => createForumPost(forumChannel, title, chunks));
+  await withForumChannel(FORUM_CHANNEL_ID, forumChannel => createForumPost(forumChannel, title, chunks));
 
   console.log("發文成功！");
 }
@@ -181,11 +179,11 @@ if (isMain) {
     console.error("發文失敗：", err.message);
     if (!DRY_RUN && ALERT_CHANNEL_ID) {
       try {
-        await withForumChannel(ALERT_CHANNEL_ID, (forumChannel) =>
+        await withForumChannel(ALERT_CHANNEL_ID, forumChannel =>
           forumChannel.threads.create({
             name: `⚠️ 發文失敗 ${new Date().toISOString().slice(0, 10)}`,
             message: { content: `今天的日常短文生成失敗了：${err.message}` },
-          })
+          }),
         );
       } catch (notifyErr) {
         console.error("失敗通知也寄不出去：", notifyErr.message);
