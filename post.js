@@ -10,6 +10,8 @@ import { getDayIndex, selectTopic, selectCp } from "./lib.js";
 const FORUM_CHANNEL_ID = process.env.USE_DEV_CHANNEL === "true"
   ? process.env.DISCORD_CHANNEL_ID_DEV
   : process.env.DISCORD_CHANNEL_ID;
+// 失敗通知統一發到 dev 頻道（不污染正式頻道版面）。沒設定就不發通知。
+const ALERT_CHANNEL_ID = process.env.DISCORD_CHANNEL_ID_DEV;
 // DRY_RUN=true 時只生成、不發到 Discord（用於 CI 驗證 AI 呼叫是否正常）
 const DRY_RUN = process.env.DRY_RUN === "true";
 
@@ -62,13 +64,13 @@ ${context.storylineSetting}
 - 直接輸出故事本文，不要加標題、作者名或任何額外說明`;
 }
 
-async function withForumChannel(fn) {
+async function withForumChannel(channelId, fn) {
   const client = new Client({ intents: [GatewayIntentBits.Guilds] });
   await client.login(process.env.DISCORD_BOT_TOKEN);
   try {
-    const channel = await client.channels.fetch(FORUM_CHANNEL_ID);
+    const channel = await client.channels.fetch(channelId);
     if (!channel || channel.type !== ChannelType.GuildForum) {
-      throw new Error(`Channel ${FORUM_CHANNEL_ID} 不可用或不是 Forum 頻道`);
+      throw new Error(`Channel ${channelId} 不可用或不是 Forum 頻道`);
     }
     return await fn(channel);
   } finally {
@@ -114,14 +116,16 @@ async function generateStory(openai, prompt) {
       });
       throw err;
     }
-    const choice = completion.choices[0];
-    const content = choice.message.content?.trim();
+    // 防呆鏈：API 偶爾回傳殘缺 shape (沒有 message、甚至沒有 choices)，
+    // 不要 NPE，當作「這次沒拿到內容」處理然後讓上面那個 console.warn 把完整回應印出來。
+    const choice = completion?.choices?.[0];
+    const content = choice?.message?.content?.trim();
     if (content) return content;
-    lastReason = choice.finish_reason;
+    lastReason = choice?.finish_reason ?? "no-choice";
     console.warn(`第 ${i + 1} 次生成沒拿到內容 (finish_reason=${lastReason})。` + (i + 1 < temperatures.length ? "降溫重試…" : "已用盡嘗試。"));
     console.warn("完整回應：", JSON.stringify(completion, null, 2));
   }
-  throw new Error(`模型連續沒回傳內容 (finish_reason=${lastReason})，疑似 safety filter`);
+  throw new Error(`模型連續沒回傳內容 (finish_reason=${lastReason})，疑似 safety filter 或 token 預算問題`);
 }
 
 export async function generateAndPost({ topicOverride, cpOverride } = {}) {
@@ -165,7 +169,7 @@ export async function generateAndPost({ topicOverride, cpOverride } = {}) {
     return;
   }
 
-  await withForumChannel((forumChannel) => createForumPost(forumChannel, title, chunks));
+  await withForumChannel(FORUM_CHANNEL_ID, (forumChannel) => createForumPost(forumChannel, title, chunks));
 
   console.log("發文成功！");
 }
@@ -175,9 +179,9 @@ const isMain = process.argv[1] && process.argv[1].endsWith("post.js");
 if (isMain) {
   generateAndPost().catch(async err => {
     console.error("發文失敗：", err.message);
-    if (!DRY_RUN) {
+    if (!DRY_RUN && ALERT_CHANNEL_ID) {
       try {
-        await withForumChannel((forumChannel) =>
+        await withForumChannel(ALERT_CHANNEL_ID, (forumChannel) =>
           forumChannel.threads.create({
             name: `⚠️ 發文失敗 ${new Date().toISOString().slice(0, 10)}`,
             message: { content: `今天的日常短文生成失敗了：${err.message}` },
@@ -186,6 +190,8 @@ if (isMain) {
       } catch (notifyErr) {
         console.error("失敗通知也寄不出去：", notifyErr.message);
       }
+    } else if (!DRY_RUN) {
+      console.warn("沒設定 DISCORD_CHANNEL_ID_DEV，跳過失敗通知。");
     }
     process.exit(1);
   });
